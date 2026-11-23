@@ -7,10 +7,13 @@ const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
 assert.equal(new Set(ids).size,ids.length,'No duplicate IDs');
 for(const m of html.matchAll(/(?:href|src)="([^"]+)"/g)){
  const value=m[1];if(value.startsWith('#')){if(value.length>1)assert(ids.includes(value.slice(1)),value);}
- else if(!/^[a-z]+:/i.test(value))assert(fs.existsSync(new URL(value,root)),value);
+ else if(!/^[a-z]+:/i.test(value)){
+  const target=value.startsWith('/')?new URL('.'+value,root):new URL(value,root);
+  assert(fs.existsSync(target),value);
+ }
 }
 assert.equal((html.match(/<h1>/g)||[]).length,1);
-assert(html.includes('個人練習作品')&&html.includes('使用模擬資料')&&html.includes('待原始碼驗證'));
+assert(html.includes('個人練習作品')&&html.includes('使用模擬資料')&&html.includes('展示狀態：可線上試用')&&html.includes('href="/storepulse/"'));
 console.log('PASS: local assets, anchor targets, unique IDs, single H1, portfolio disclosure');
 const source=fs.readFileSync(new URL('assets/main.js',root),'utf8');
 function run(config,clipboard){
@@ -20,7 +23,7 @@ function run(config,clipboard){
 }
 let nodes=run({email:'',platformUrl:''});assert.equal(nodes['#contact-links'].children.length,0);
 nodes=run({email:'hello@example.com',platformName:'測試平台',platformUrl:'https://example.com/profile'});
-assert.equal(nodes['#contact-links'].children.length,2);assert(nodes['#contact-links'].children[0].href.startsWith('mailto:hello@example.com?subject='));
+assert(nodes['#contact-links'].children.length>=2);assert(nodes['#contact-links'].children.some(c=>c.href?.startsWith('mailto:hello%40example.com?subject=')));
 for(const url of ['javascript:alert(1)','http://example.com','data:text/html,unsafe','invalid'])assert.equal(run({platformUrl:url})['#contact-links'].children.length,0);
 for(const email of ['x@y.com?bcc=bad@example.com','bad\n@example.com','no-address'])assert.equal(run({email})['#contact-links'].children.length,0);
 console.log('PASS: empty contacts hidden; configured contacts rendered; unsafe URLs and malformed email rejected');

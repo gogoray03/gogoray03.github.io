@@ -1,47 +1,38 @@
-# StorePulse Pro（繁體中文）
+# 自動化與資料分析工作室
 
-商家營收 CSV 分析的 **純前端、免帳號、免 API** 示範作品。**並非正式財務或會計系統。**
+繁體中文個人接案網站，使用原生 HTML、CSS、JavaScript，不需建置或第三方執行環境，可由 GitHub Pages 直接提供根目錄靜態檔案。
 
-## 如何啟動
+## 維護內容
 
-解壓 ZIP 後在本資料夾啟動本機靜態伺服器：
+- `index.html`：首頁、服務、作品、關於、流程、FAQ、聯絡區。
+- `assets/style.css`：響應式版型與 reduced-motion 支援。
+- `assets/main.js`：手機選單、聯絡入口、需求範本複製及失敗備援。
+- `assets/config.js`：公開聯絡設定。
+- `404.html`、`robots.txt`、`sitemap.xml`：錯誤頁與搜尋引擎設定。
+- `tests/check.mjs`：零相依的結構、聯絡設定與剪貼簿備援檢查。
 
-```bash
-python -m http.server 8000
-```
+## 設定聯絡方式
 
-開啟 `http://localhost:8000/`。或部署至 GitHub Pages 的 `/storepulse/` 目錄（需保留各檔案與資料夾的相對路徑）。由於 `fetch()` 會載入示範 CSV，不建議直接以 `file://` 打開首頁。
+在 `assets/config.js` 填入站長的公開 email、platformName 與 platformUrl。接案平台只接受 HTTPS 網址。留空時不建立假連結，顯示尚未開放洽詢。請勿放入任何金鑰或密碼；此檔公開可讀。電子郵件入口會開啟訪客的郵件軟體，不會由網站寄信。網站沒有表單後端，也不儲存洽詢資料。
 
-## CSV 欄位
+## StorePulse
 
-必填：`date,order_id,product,quantity,unit_price,channel`
+`storepulse/` 包含 StorePulse Pro 的純前端商家營收 CSV 分析示範，可於 `/storepulse/` 試用。使用虛構合成資料，並非正式財務或會計系統。完整 CSV 格式與測試命令請參閱 `storepulse/README.md`。
 
-選填：`status,discount,shipping,cost`
+新增作品可在 `#work` 複製 `.project` 區塊，填入可查證的內容，清楚區分練習與客戶專案，僅連結已驗證的展示。
 
-- 日期：YYYY-MM-DD；金額使用新臺幣。
-- 每個 CSV 資料列為**一筆商品明細**。`quantity × unit_price` 為商品總額。`discount`、`shipping` 是該明細列的總金額（不重複計算訂單層級金額）。`cost` 是**每件商品成本**。
-- `status` 為 `paid`、`refunded`、`cancelled`，亦支援部份中文別名；缺省 `paid`。
-- `refunded` 為單獨的退款商品明細列；系統不會主動將原始已付款商品行轉成退款行。取消訂單不計入營收。
-- 已付款的訂單數是**按 order_id 去重**，不是商品明細行數；退款不增加訂單數。
-- 淨營收 = 已付款商品總額 − 已付款折扣 − 退款淨額 + 已付款運費。
-- 在完整成本資料存在時才顯示簡化毛利估計，不含稅、營運費用等。
+## 檢查與預覽
 
-## 設計限制
+以 Node.js 執行 `node tests/check.mjs`、`node --check assets/main.js` 及 `node --check assets/config.js`。使用任意靜態 HTTP 伺服器於根目錄預覽。也可直接開啟 index.html；在剪貼簿 API 不可用時會顯示可手動複製的文字欄位。
 
-- 預設使用 `data/sample-orders.csv` 的虛構合成資料；不含任何真實客戶資料。
-- CSV 僅在當前瀏覽器處理，不主動發送給後端；若網站託管由第三方提供，載入靜態頁本身仍依託管服務一般紀錄政策。
-- 檔案上限 5MB，資料列上限 20,000；基本欄位檢核後會排除格式錯誤的資料列。
-- 不提供跨平台帳務自動對帳、付款核實、稅額或匯率計算、完整財務報表、正式 POS 介接。
-- CSV 中的可疑文字以 `textContent` 呈現，不插入 HTML；匯出使用公式注入防護。
+## 分支與發布
 
-## 自動化測試
+本次修改分支：`redesign/freelance-portfolio`；基底：`8aa2d50c3502ca84a91ac1bbab0b652a87086e26`。
 
-```bash
-node --test tests/*.test.mjs
-node --check assets/app.mjs
-node --check assets/core.mjs
-```
+先推送分支並建立以 main 為目標的 PR。PR 不會自動產生 GitHub Pages 分支預覽，因此需使用本機預覽或經授權另設預覽部署。不要為了預覽更改正式 Pages 來源。
 
-## 給 Codex 的整合說明
+取得使用者確認後才合併。合併前確認 GitHub Settings → Pages 原有來源設定；若使用 branch 部署，應使用 main 的根目錄。此版本沒有變更 Pages 設定或自動部署工作流程。
 
-請將 ZIP 內所有內容放入 `gogoray03/gogoray03.github.io` 儲存庫的 `storepulse/` 目錄，並在首頁作品卡加入 `href="/storepulse/"` 的「線上試用」連結。先在新分支測試，建立 PR；未經使用者確認勿直接合併至 main。**注意**，本專案是基於原先 StorePulse 的功能規格重新建構的 Pro 展示版本，並非宣稱已復原當年全部原始碼。
+原站備份另附 ZIP；Git 歷史保留原始提交。要復原已發布版本，使用審查過的 revert 提交，不強制覆寫歷史。
+
+正式發布前須填入至少一個真實聯絡方式。搜尋排名、Core Web Vitals、真實裝置與螢幕閱讀器結果尚未驗證。
