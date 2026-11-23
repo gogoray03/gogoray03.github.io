@@ -17,7 +17,7 @@
 
 ## StorePulse
 
-原始 Repository 僅有作品名稱與模擬資料聲明，沒有 StorePulse 原始碼。新版保留作品介紹並標示待驗證，不提供假的儀表板、數據或功能宣稱。收到原始碼後，應先確認安裝步驟、資料來源、授權、主要流程與測試，再決定是否能靜態部署於 GitHub Pages。需要 Python 伺服器的版本不能直接在 Pages 執行。
+`storepulse/` 包含 StorePulse Pro 的純前端商家營收 CSV 分析示範，可於 `/storepulse/` 試用。使用虛構合成資料，並非正式財務或會計系統。完整 CSV 格式與測試命令請參閱 `storepulse/README.md`。
 
 新增作品可在 `#work` 複製 `.project` 區塊，填入可查證的內容，清楚區分練習與客戶專案，僅連結已驗證的展示。
 

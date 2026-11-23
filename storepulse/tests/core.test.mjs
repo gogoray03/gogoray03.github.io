@@ -1,0 +1,9 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {parseCSV,normalize,summarize,buildCSV} from '../assets/core.mjs';
+const h='date,order_id,product,quantity,unit_price,channel,status,discount,shipping,cost\n';
+test('basic CSV and money metrics',()=>{const x=normalize(parseCSV(h+'2026-11-01,X1,Coffee,2,100,Online,paid,10,5,40\n'));assert.equal(x.errors.length,0);const s=summarize(x.rows);assert.equal(s.gross,20000);assert.equal(s.net,19500);assert.equal(s.orders,1);assert.equal(s.units,2);assert.equal(s.profit,11500);});
+test('quoted CSV cells and escaped quotes',()=>{const x=parseCSV(h+'2026-11-01,A1,"cup, ""blue""",1,100,Shop,paid,0,0,10\n');assert.equal(x[0].product,'cup, "blue"');});
+test('refund and cancellation are reflected',()=>{const x=normalize(parseCSV(h+'2026-11-01,X1,P,1,200,Web,paid,0,0,50\n2026-11-02,X1,P,1,200,Web,refunded,0,0,50\n2026-11-03,X2,P,1,100,Web,cancelled,0,0,50\n'));const s=summarize(x.rows);assert.equal(s.net,0);assert.equal(s.refund,20000);assert.equal(s.orders,1);assert.equal(s.units,0);});
+test('multiple line items one order',()=>{const s=summarize(normalize(parseCSV(h+'2026-11-01,X1,P,1,100,Web,paid,0,0,40\n2026-11-01,X1,Q,1,100,Web,paid,0,0,40\n')).rows);assert.equal(s.orders,1);assert.equal(s.net,20000);});
+test('bad rows are flagged but valid rows survive',()=>{const x=normalize(parseCSV(h+'2026-11-01,X1,P,1,100,Web,paid,0,0,10\n2026-02-30,X2,Q,1,50,Web,paid,0,0,10\n'));assert.equal(x.rows.length,1);assert.equal(x.errors[0].line,3);});
+test('required fields and CSV structure validated',()=>{assert.throws(()=>parseCSV('date,order_id\n2026-11-01,X1\n'),/缺少必要欄位/);assert.throws(()=>parseCSV(h+'"unfinished\n'),/引號/);});
+test('CSV export mitigates spreadsheet formulas',()=>{const result=buildCSV([['x','=HYPERLINK("bad")'],['x','+1']]);assert.match(result,/'=HYPERLINK/);assert.match(result,/'\+1|\'\+1/);assert.ok(result.includes("'=HYPERLINK"));});
