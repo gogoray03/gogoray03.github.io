@@ -1,0 +1,11 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {validate,enrich,trade,walkForward,snapshotInfo,promptFor} from "./research-core.mjs";
+const bars=n=>Array.from({length:n},(_,i)=>{const d=new Date(Date.UTC(2026,0,i+1)).toISOString().slice(0,10),x=100+i*.3;return {date:d,open:x,high:x+3,low:x-2,close:x+1,volume:1000+i*3};});
+test("rejects duplicate days and invalid prices",()=>{assert.equal(validate(bars(4)).length,4);assert.throws(()=>validate([...bars(2),bars(2)[1]]));assert.throws(()=>validate([{...bars(1)[0],high:0}]));});
+test("relative volume uses only prior 20 bars",()=>{const r=enrich(bars(30));assert.equal(r[19].relative,null);assert.ok(r[20].relative>0);});
+test("next open and no overlapping positions",()=>{const t=trade(enrich(bars(60)),{rise:0,relative:0,hold:2,costBps:0});assert.equal(t.trades[0].entry,bars(3)[2].date);for(let i=1;i<t.count;i++)assert.ok(t.trades[i].entry>t.trades[i-1].exit);});
+test("cost lowers return",()=>{const r=enrich(bars(70));assert.ok(trade(r,{rise:0,relative:0,hold:2,costBps:0}).total>trade(r,{rise:0,relative:0,hold:2,costBps:40}).total);});
+test("small sample is refused",()=>assert.equal(walkForward(bars(30)).ok,false));
+test("sample out of sample split",()=>{const r=walkForward(bars(180));assert.equal(r.ok,true);assert.ok(r.trainRange[1]<r.testRange[0]);assert.ok(r.test.trades.every(t=>t.signal>=r.testRange[0]));});
+test("no real-time snapshots accepted",()=>{const s={market:"TWSE",code:"2330",interval:"1d",realtime:false,source:"TWSE",dataAsOf:"2026-11-23",bars:[{date:"2026-11-23"}]};assert.equal(snapshotInfo(s).code,"2330");assert.match(promptFor(s),/不可杜撰/);assert.throws(()=>snapshotInfo({...s,realtime:true}));});
