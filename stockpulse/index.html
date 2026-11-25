@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="台股上市櫃盤後研究工具，提供技術指標、量價篩選和歷史回測。">
+  <title>StockPulse AI｜台股量價研究</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="frame masthead">
+      <a class="brand" href="./"><span class="mark" aria-hidden="true">SP</span> StockPulse AI</a>
+      <nav aria-label="頁面導覽"><a href="#screener">量價篩選</a><a href="#backtest">回測</a><a href="../">工作室首頁</a></nav>
+    </div>
+  </header>
+  <main class="frame">
+    <section class="intro" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">STOCKPULSE / TAIWAN EQUITIES</p>
+        <h1 id="page-title">台股量價研究</h1>
+        <p>以官方盤後行情研究個股、檢查量價條件，並把分析快照帶到 ChatGPT。</p>
+      </div>
+      <p class="status-chip">盤後 / 歷史資料</p>
+    </section>
+    <noscript><p>請啟用 JavaScript 以查詢行情與分析 CSV。</p></noscript>
+    <div class="workspace">
+      <aside aria-label="行情來源與自選股">
+        <section class="panel">
+          <h2>股票查詢</h2>
+          <form id="lookup">
+            <label>市場<select id="market"><option value="TWSE">上市 TWSE</option><option value="TPEX">上櫃 TPEx</option></select></label>
+            <label>股票代號或名稱<input id="symbol" list="symbols" value="2330" required maxlength="24" autocomplete="off"></label>
+            <datalist id="symbols"></datalist>
+            <label>歷史查詢截止月份<input type="month" id="month" required></label>
+            <label>查詢範圍<select id="months"><option value="3">近 3 個月</option><option value="6">近 6 個月</option><option value="12">近 12 個月</option></select></label>
+            <button class="primary" id="search-button">載入歷史日 K</button>
+          </form>
+          <a id="official" class="source-link" href="https://www.twse.com.tw/zh/trading/historical/stock-day.html" target="_blank" rel="noopener">官方歷史查詢與 CSV</a>
+          <p class="fine">名稱搜尋使用已載入的盤後清單。也可直接輸入股票代號。</p>
+          <p id="lookup-status" class="message" role="status"></p>
+        </section>
+        <section class="panel">
+          <div class="line"><h2>自選股</h2><button id="watch-add" class="compact">加入個股</button></div>
+          <p class="fine">儲存在此瀏覽器。</p>
+          <ul id="watchlist" class="watchlist"></ul>
+        </section>
+        <section class="panel">
+          <h2>匯入行情 CSV</h2>
+          <form id="import-form">
+            <label>資料週期<select id="import-period"><option value="0">日 K</option><option value="1">1 分 K</option><option value="3">3 分 K</option><option value="5">5 分 K</option><option value="15">15 分 K</option></select></label>
+            <label>資料提供者或出處<input id="import-source" required maxlength="100" placeholder="例如：證交所個股日成交資訊"></label>
+            <label>選擇同一個股的 CSV<input id="csv" type="file" accept=".csv,text/csv" multiple required></label>
+            <button>匯入到查詢欄的個股</button>
+          </form>
+          <details>
+            <summary>支援格式與資料權限</summary>
+            <p>支援官方個股日成交 CSV，或含 date、open、high、low、close、volume 的 UTF-8／Big5 CSV。分鐘檔使用 time 欄位，格式 YYYY-MM-DD HH:mm，使用台北時間及 K 棒起始時間。</p>
+            <p>volume 使用股數，amount 為同口徑成交金額（新台幣，可省略）。有 code 欄時只採用指定個股。請匯入你有權使用的資料。檔案在本機處理。</p>
+          </details>
+          <p id="import-status" class="message" role="status"></p>
+        </section>
+      </aside>
+      <div class="content">
+        <section class="panel instrument" aria-labelledby="instrument">
+          <div class="line chart-header">
+            <div><p class="eyebrow">個股工作區</p><h2 id="instrument">尚未載入個股</h2></div>
+            <div class="periods" id="periods" role="group" aria-label="K 線週期">
+              <button data-period="0" aria-pressed="true">日 K</button>
+              <button data-period="1" aria-pressed="false" disabled>1 分</button>
+              <button data-period="3" aria-pressed="false" disabled>3 分</button>
+              <button data-period="5" aria-pressed="false" disabled>5 分</button>
+              <button data-period="15" aria-pressed="false" disabled>15 分</button>
+            </div>
+          </div>
+          <p id="meta" class="metadata">盤後／歷史來源。第一版尚無即時行情來源。</p>
+          <div class="kpis">
+            <div><span>最新收盤</span><strong id="close">—</strong></div>
+            <div><span>較上一根變動</span><strong id="change">—</strong></div>
+            <div><span>成交股數</span><strong id="volume">—</strong></div>
+            <div><span>盤中 VWAP</span><strong id="vwap">—</strong></div>
+          </div>
+          <div class="plot">
+            <canvas id="chart" role="img" aria-label="K 線及成交量圖"></canvas>
+            <p id="chart-empty">查詢個股日 K，或匯入行情 CSV 開啟圖表。</p>
+          </div>
+          <p id="chart-caption" class="fine">分鐘 K 需匯入符合週期的資料。</p>
+          <div class="technical">
+            <div><span>MACD 12 / 26 / 9</span><strong id="macd">—</strong></div>
+            <div><span>KD 9 / 3 / 3</span><strong id="kd">—</strong></div>
+            <div><span>RSI 14</span><strong id="rsi">—</strong></div>
+          </div>
+          <div class="line snapshot">
+            <p>快照會附上資料來源、時間、指標與最近 K 棒。</p>
+            <div class="actions"><button id="copy" disabled>複製分析快照</button><button id="snapshot" disabled>下載 JSON</button></div>
+          </div>
+          <p id="snapshot-status" class="message" role="status"></p>
+        </section>
+        <section class="panel" id="screener">
+          <div class="line"><div><p class="eyebrow">MARKET SCREEN</p><h2>量價篩選</h2></div></div>
+          <form id="refresh-form" class="filters">
+            <label>上市報表交易日<input id="screen-date" type="date" required></label>
+            <button id="refresh" class="primary">更新盤後行情</button>
+          </form>
+          <p class="fine">上櫃 API 回傳最近可用的收盤清單，兩個市場的日期各自顯示。</p>
+          <p id="screen-status" class="message" role="status">更新後會顯示各市場的交易日期與取得時間。</p>
+          <details>
+            <summary>用官方盤後清單 CSV 更新</summary>
+            <form id="daily-form" class="filters">
+              <label>資料市場<select id="daily-market"><option value="TWSE">上市 TWSE</option><option value="TPEX">上櫃 TPEx</option></select></label>
+              <label>官方收盤行情<input id="daily-csv" type="file" accept=".csv,text/csv" required></label>
+              <button>匯入盤後清單</button>
+            </form>
+            <p class="fine">下載含資料日期的 CSV，可至頁尾的上市／上櫃資料集取得。</p>
+          </details>
+          <form id="filter" class="filters">
+            <label>篩選範圍<select id="universe"><option value="TWSE">上市</option><option value="TPEX">上櫃</option><option value="watch">自選股</option></select></label>
+            <label>最低成交股數<input id="min-volume" type="number" value="1000000" min="0" step="1" required></label>
+            <label>最低漲跌幅 %<input id="min-change" type="number" value="0" step="0.1" required></label>
+            <label>最低 20 日相對量<input id="min-relative" type="number" value="0" min="0" step="0.1" required></label>
+            <button>套用條件</button>
+          </form>
+          <p class="fine">相對量使用同來源前 20 根日 K 的平均量，目前適用於本次已載入且日期相同的歷史序列。0 為停用。</p>
+          <p id="screen-count" class="fine"></p>
+          <div class="table-wrap"><table><thead><tr><th>個股</th><th>交易日</th><th>收盤</th><th>漲跌幅</th><th>成交股數</th><th>相對量</th></tr></thead><tbody id="screen-table"></tbody></table></div>
+        </section>
+        <section class="panel" id="backtest">
+          <p class="eyebrow">HISTORICAL SIMULATION</p><h2>個股量價回測</h2>
+          <p>日 K 收盤觸發條件，次一根日 K 的開盤買入，持有指定交易日後於開盤賣出。</p>
+          <form id="backtest-form" class="filters">
+            <label>起始日<input id="backtest-start" type="date"></label>
+            <label>結束日<input id="backtest-end" type="date"></label>
+            <label>訊號最低漲幅 %<input id="bt-change" type="number" value="2" step="0.1" required></label>
+            <label>最低 20 日相對量<input id="bt-relative" type="number" value="1.2" min="0" step="0.1" required></label>
+            <label>持有交易日<input id="hold" type="number" value="3" min="1" max="60" required></label>
+            <label>單邊成本（bps）<input id="cost" type="number" value="40" min="0" max="1000" step="0.1" required></label>
+            <button class="primary" id="run-bt" disabled>執行回測</button>
+          </form>
+          <p class="fine">1 bps = 0.01%。使用未還原價格、單一持倉與已平倉權益回撤；成交、費稅與滑價依設定模擬，除權息與分割可能扭曲結果。</p>
+          <p id="backtest-status" class="message" role="status"></p>
+          <div class="table-wrap"><table><thead><tr><th>訊號日</th><th>買入日</th><th>賣出日</th><th>買入價</th><th>賣出價</th><th>淨報酬</th></tr></thead><tbody id="backtest-table"></tbody></table></div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <footer class="frame footer">
+    <span>行情以官方與匯入檔載明的日期為準。即時行情目前未接入。</span>
+    <div><a href="https://data.gov.tw/dataset/11549">上市行情資料</a><a href="https://data.gov.tw/dataset/11371">上櫃行情資料</a><a href="https://data.gov.tw/license">開放資料授權</a></div>
+  </footer>
+</body>
+</html>
