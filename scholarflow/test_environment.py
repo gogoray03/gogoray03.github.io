@@ -28,6 +28,15 @@ class EnvironmentTests(unittest.TestCase):
             self.assertTrue(env.dependency_closure(['app'])['pass_check'])
             self.assertFalse(env.dependency_closure(['app[optional]'])['pass_check'])
 
+    def test_duplicate_numpy_metadata_uses_one_worker_selected_version(self):
+        dists = [SimpleNamespace(metadata={'Name':'numpy'}, version='1.26.4'),
+                 SimpleNamespace(metadata={'Name':'NumPy'}, version='2.4.6'),
+                 SimpleNamespace(metadata={'Name':'nvidia_cublas_cu12'}, version='12.1')]
+        with patch.object(env.metadata, 'distributions', return_value=dists), patch.object(env.metadata, 'version', side_effect=lambda n: {'numpy':'2.4.6','nvidia-cublas-cu12':'12.1'}[n]):
+            stack = env.protected_stack()
+        self.assertEqual(stack['selected'], {'numpy':'2.4.6','nvidia-cublas-cu12':'12.1'})
+        self.assertEqual(stack['duplicates'], {'numpy':['1.26.4','2.4.6']})
+
     def setup_case(self, install_code=0):
         previous = os.getcwd()
         try:
@@ -36,6 +45,8 @@ class EnvironmentTests(unittest.TestCase):
                 commands = []
                 def run(args, **kwargs):
                     commands.append(args)
+                    if 'protected_stack' in args[-1]:
+                        return SimpleNamespace(returncode=0, stdout=json.dumps({'selected':{'numpy':'2.4.6'},'duplicates':{'numpy':['1.26.4','2.4.6']}}), stderr='')
                     if 'install' in args: return SimpleNamespace(returncode=install_code, stdout='install output', stderr='')
                     return SimpleNamespace(returncode=0, stdout=json.dumps({'pass_check':True, 'errors':[], 'versions':{}}), stderr='')
                 def create(path): Path(path).mkdir()
@@ -49,8 +60,9 @@ class EnvironmentTests(unittest.TestCase):
                     builder.assert_called_once_with(with_pip=False, system_site_packages=True)
                 report = json.loads(Path('scholarflow-environment.json').read_text(encoding='utf-8'))
                 self.assertTrue(Path('scholarflow-install.log').exists())
-                self.assertEqual(commands[0][:5], [env.sys.executable, '-m', 'pip', '--python', str(worker / ('Scripts/python.exe' if env.sys.platform == 'win32' else 'bin/python'))])
-                self.assertTrue(all(str(c[0]).startswith(str(worker)) for c in commands[1:]))
+                self.assertEqual(commands[1][:5], [env.sys.executable, '-m', 'pip', '--python', str(worker / ('Scripts/python.exe' if env.sys.platform == 'win32' else 'bin/python'))])
+                self.assertTrue(all(str(c[0]).startswith(str(worker)) for i,c in enumerate(commands) if i != 1))
+                self.assertEqual((worker/'host-stack-constraints.txt').read_text(), 'numpy==2.4.6\n')
                 return report
         finally:
             os.chdir(previous)

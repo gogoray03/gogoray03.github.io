@@ -35,7 +35,7 @@ gold = [
 runtime = ModelRuntime()
 pipeline = Pipeline(runtime.generate, audit_path='scholarflow-audit.json')
 Path('scholarflow-audit.json').write_text('[]', encoding='utf-8')
-report = {'version':'1.1.2', 'requested_model':MODEL, 'status':'started',
+report = {'version':'1.1.3', 'requested_model':MODEL, 'status':'started',
           'academic_quality_verified':False, 'environment':environment,
           'prior_user_run':{'model':'Qwen2.5-7B-Instruct','gpu':'Tesla T4','vram_gib':14.56,
               'peak_allocated_gib':5.66,'model_load_seconds':498.06,'analysis_seconds':67.26,'accepted':0,'rejected':8}}
@@ -122,8 +122,8 @@ def build():
         'else:\n'
         '    raise RuntimeError("教材處理失敗，請檢查上方錯誤及私人 audit")\n')
     for name, cells in [
-        ('benchmark-v1.1.ipynb', [cell('markdown', '# ScholarFlow AI V1.1.2 Benchmark\n選全新 GPU 執行階段後「全部執行」。預設 Qwen 7B，不需上傳或金鑰。避開 ensurepip，以主環境 pip --python 指定目標 worker；套件安裝在 worker venv，繼承現有 PyTorch/CUDA，不修改主環境套件。這是程序隔離而非完全封閉環境；報告分開記錄推理相依性與完整 pip check。\n答案表示法會明確正規化，重複或覆核不一致的題目最多重生三次。模型自評與格式通過皆不代表學術正確。ZIP 保存每次輸出、錯誤及人工評估表。14B 仍可能 OOM。'), *common, cell('code', benchmark_launch)]),
-        ('scholarflow.ipynb', [cell('markdown', '# ScholarFlow AI V1.1.2\n選全新 Colab GPU 執行階段並全部執行，上傳任務 JSON 與獲授權教材。模型於 worker 程序執行。原文和診斷僅留在你的 Colab。無 OCR；內容需人工查核。'), *common, cell('code', upload_launch)])]:
+        ('benchmark-v1.1.ipynb', [cell('markdown', '# ScholarFlow AI V1.1.3 Benchmark\n選全新 GPU 執行階段後「全部執行」。預設 Qwen 7B，不需上傳或金鑰。避開 ensurepip，以主環境 pip --python 指定目標 worker；套件安裝在 worker venv，繼承現有 PyTorch/CUDA，不修改主環境套件。這是程序隔離而非完全封閉環境；報告分開記錄推理相依性與完整 pip check。\n答案表示法會明確正規化，重複或覆核不一致的題目最多重生三次。模型自評與格式通過皆不代表學術正確。ZIP 保存每次輸出、錯誤及人工評估表。14B 仍可能 OOM。'), *common, cell('code', benchmark_launch)]),
+        ('scholarflow.ipynb', [cell('markdown', '# ScholarFlow AI V1.1.3\n選全新 Colab GPU 執行階段並全部執行，上傳任務 JSON 與獲授權教材。模型於 worker 程序執行。原文和診斷僅留在你的 Colab。無 OCR；內容需人工查核。'), *common, cell('code', upload_launch)])]:
         for i, c in enumerate(cells): c['id'] = f'sf11-{i}'
         nb = dict(nbformat=4, nbformat_minor=5, metadata=dict(colab={'name':name,'provenance':[]}, accelerator='GPU', kernelspec={'display_name':'Python 3','language':'python','name':'python3'}, language_info={'name':'python'}), cells=cells)
         (ROOT/name).write_text(json.dumps(nb, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')

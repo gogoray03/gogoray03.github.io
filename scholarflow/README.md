@@ -74,3 +74,6 @@ build_notebooks.py 將受測模組直接嵌入 Notebook，不在執行時下載�
 
 ### V1.1.2 Colab bootstrap hotfix
 Python 3.13 Colab `ensurepip` failed before model loading. Create the worker with `with_pip=False` and use host `python -m pip --python <worker-python> install` to install into the worker. This avoids modifying host packages. Both notebooks embed the updated environment module. Start a fresh GPU runtime. A local Python 3.13 offline wheel installation confirmed the target-worker mechanism and that the probe package did not appear in the host. Actual Colab model package installation and GPU inference remain unverified.
+
+### V1.1.3 Colab duplicate metadata fix
+The actual Colab install log exposed conflicting NumPy constraints (`1.26.4` and `2.4.6`). The worker now resolves each canonical package name once via its own metadata precedence, records all duplicate versions separately, and writes only one constraint per name. Added regression tests for duplicate NumPy metadata and constraint generation. Real Colab installation/inference still requires rerun.

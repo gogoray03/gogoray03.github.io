@@ -40,6 +40,19 @@ def dependency_closure(roots):
     return dict(pass_check=not errors, errors=sorted(set(errors)), versions=versions)
 
 
+def protected_stack():
+    """Resolve one constraint per normalized name using worker metadata precedence."""
+    from packaging.utils import canonicalize_name
+    discovered = {}
+    for dist in metadata.distributions():
+        name = canonicalize_name(dist.metadata.get('Name') or '')
+        if name in ('torch', 'numpy', 'triton') or name.startswith('nvidia-'):
+            discovered.setdefault(name, set()).add(dist.version)
+    selected = {name: metadata.version(name) for name in sorted(discovered)}
+    duplicates = {name: sorted(versions) for name, versions in discovered.items() if len(versions) > 1}
+    return dict(selected=selected, duplicates=duplicates)
+
+
 def pip_check(python):
     command = [sys.executable, '-m', 'pip']
     if Path(python).resolve() != Path(sys.executable).resolve() or str(python) != sys.executable:
@@ -51,7 +64,7 @@ def pip_check(python):
 def setup_worker(packages, root='scholarflow-worker-env'):
     root = Path(root).resolve()
     before = pip_check(sys.executable)
-    environment = dict(version='1.1.2', python=sys.version, isolation='worker_venv_with_system_packages',
+    environment = dict(version='1.1.3', python=sys.version, isolation='worker_venv_with_system_packages',
                        host_pip_check_before=before, dependency_check_pass=False)
     destination = Path('scholarflow-environment.json')
     try:
@@ -60,13 +73,14 @@ def setup_worker(packages, root='scholarflow-worker-env'):
         venv.EnvBuilder(with_pip=False, system_site_packages=True).create(root)
         python = root / ('Scripts/python.exe' if sys.platform == 'win32' else 'bin/python')
         # Freeze the existing heavyweight stack: incompatible upgrades must fail resolution.
-        protected = []
-        for dist in metadata.distributions():
-            name = dist.metadata.get('Name', '').lower().replace('_', '-')
-            if name in ('torch', 'numpy', 'triton') or name.startswith('nvidia-'):
-                protected.append(f'{name}=={dist.version}')
+        environment['setup_stage'] = 'resolve_worker_stack'
+        stack_probe = 'import json; from colab_environment import protected_stack; print(json.dumps(protected_stack()))'
+        stack_run = subprocess.run([str(python), '-c', stack_probe], capture_output=True, text=True, check=True)
+        stack = json.loads(stack_run.stdout)
+        environment['protected_stack'] = stack
+        protected = [f'{name}=={version}' for name, version in sorted(stack['selected'].items())]
         constraint = root / 'host-stack-constraints.txt'
-        constraint.write_text('\n'.join(sorted(set(protected))) + '\n', encoding='utf-8')
+        constraint.write_text('\n'.join(protected) + '\n', encoding='utf-8')
         environment['setup_stage'] = 'install_worker_packages'
         install = subprocess.run([sys.executable, '-m', 'pip', '--python', str(python), 'install', '--disable-pip-version-check',
                     '-c', str(constraint), *packages], capture_output=True, text=True)
