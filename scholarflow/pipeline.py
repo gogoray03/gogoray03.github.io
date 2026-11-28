@@ -72,6 +72,61 @@ def map_citations(item, sources):
                 evidence='\n'.join(s['text'] for s in citations))
 
 
+def clean_options(options):
+    if not isinstance(options, list) or len(options) != 4 or any(not isinstance(o, str) or not o.strip() or len(o) > 3000 for o in options):
+        raise ValueError('options: require four non-empty strings')
+    clean = []
+    for index, option in enumerate(options):
+        match = re.match(r'^\s*([A-Da-d])[)）.．、:：]\s*', option)
+        if match and match[1].upper() != 'ABCD'[index]:
+            raise ValueError('option prefix does not match its position')
+        clean.append(option[match.end():].strip() if match else option.strip())
+    comparable = [o.rstrip(' ;；。.!！?？').casefold() for o in clean]
+    if not all(comparable) or len(set(comparable)) != 4:
+        raise ValueError('options duplicate after removing labels and trailing punctuation')
+    return clean
+
+
+def normalize_answer(value, options):
+    """Convert an unambiguous representation, never guess a one-based index."""
+    if type(value) is int and 0 <= value < 4:
+        return value
+    if isinstance(value, list) and len(value) == 1:
+        value = value[0]
+    if isinstance(value, str):
+        value = value.strip()
+        if value.upper() in ('A', 'B', 'C', 'D'):
+            return 'ABCD'.index(value.upper())
+        if value in ('0', '1', '2', '3'):
+            return int(value)
+        matches = [i for i, opt in enumerate(options) if value == opt]
+        if len(matches) == 1:
+            return matches[0]
+    raise ValueError('answer must be A/B/C/D, zero-based 0..3 or exact option text; no index guessing')
+
+
+def answer_fields(obj, options):
+    keys = [k for k in ('answerLabel', 'answer', 'answerText') if k in obj]
+    if not keys:
+        raise ValueError('answerLabel required: A/B/C/D')
+    indices = []
+    for key in keys:
+        value = obj[key]
+        if key == 'answerText':
+            if not isinstance(value, str) or value.strip() not in options:
+                raise ValueError('answerText must exactly match one option')
+            indices.append(options.index(value.strip()))
+        elif key == 'answerLabel':
+            if not isinstance(value, str) or value.strip().upper() not in ('A', 'B', 'C', 'D'):
+                raise ValueError('answerLabel must be A/B/C/D')
+            indices.append('ABCD'.index(value.strip().upper()))
+        else:
+            indices.append(normalize_answer(value, options))
+    if len(set(indices)) != 1:
+        raise ValueError('answerLabel, answer and answerText disagree; regenerate the whole question')
+    return indices[0]
+
+
 def validate_item(obj, kind, sources):
     keys = (['topic', 'summary', 'explanation', 'extension'] if kind == 'notes'
             else ['topic', 'question', 'explanation'])
@@ -79,11 +134,8 @@ def validate_item(obj, kind, sources):
     result = {k: obj[k] for k in keys}
     result.update(map_citations(obj, sources))
     if kind == 'questions':
-        opts, answer = obj.get('options'), obj.get('answer')
-        if not isinstance(opts, list) or len(opts) != 4 or any(not isinstance(o, str) or not o.strip() or len(o) > 3000 for o in opts):
-            raise ValueError('options: require four non-empty strings')
-        if len({o.strip().casefold() for o in opts}) != 4 or type(answer) is not int or not 0 <= answer < 4:
-            raise ValueError('options must be distinct; answer must be integer 0..3')
+        opts = clean_options(obj.get('options'))
+        answer = answer_fields(obj, opts)
         result.update(options=opts, answer=answer)
     result['id'] = kind + '-' + hashlib.sha256(json.dumps(result, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:20]
     return result
@@ -96,14 +148,21 @@ class Pipeline:
         self.generate, self.attempts = generate, attempts
         self.audit, self.audit_path = [], audit_path
 
-    def request(self, stage, prompt, validate):
+    def save_audit(self, entry):
+        self.audit.append(entry)
+        if self.audit_path:
+            Path(self.audit_path).write_text(json.dumps(self.audit, ensure_ascii=False, indent=2), encoding='utf-8')
+
+    def request(self, stage, prompt, validate, limit=None, candidate_round=None):
         feedback = ''
-        for attempt in range(1, self.attempts + 1):
-            entry = dict(stage=stage, attempt=attempt, raw=None, repair=None, error=None)
+        for attempt in range(1, (self.attempts if limit is None else limit) + 1):
+            entry = dict(stage=stage, attempt=attempt, candidate_round=candidate_round, raw=None, repair=None, error=None)
             try:
                 entry['raw'] = self.generate(SYSTEM + '\n' + prompt + feedback)
                 obj, entry['repair'] = parse_json(entry['raw'])
                 result = validate(obj)
+                if isinstance(result, dict) and 'answer' in result:
+                    entry['normalized_answer'] = result['answer']
                 entry['accepted'] = True
                 return result
             except (ValueError, TypeError, KeyError) as exc:
@@ -113,10 +172,48 @@ class Pipeline:
                 entry['error'] = f'{type(exc).__name__}: {exc}'
                 raise  # OOM/network/runtime failures are not JSON retries.
             finally:
-                self.audit.append(entry)
-                if self.audit_path:
-                    Path(self.audit_path).write_text(json.dumps(self.audit, ensure_ascii=False, indent=2), encoding='utf-8')
+                self.save_audit(entry)
         return None
+
+    def make_question(self, subset, context, plan):
+        failures = []
+        for round_number in range(1, self.attempts + 1):
+            prompt = ('生成一題理解四選一題，唯一正解，選項不要加 A) 等前綴。'
+                      '答案使用 answerLabel A/B/C/D，answerText 必須逐字等於該選項。解釋必須支持該答案。'
+                      '格式 {"topic":"...","question":"...","options":["...","...","...","..."],'
+                      '"answerLabel":"C","answerText":"第三個選項原文","explanation":"...","sourceIds":["S0001"]}')
+            feedback = '' if not failures else '\n前一題未通過：' + failures[-1] + '。改用單一較簡單概念，重新生成整題；不要只改答案編號。'
+            def validate_question(obj):
+                require_text(obj, ['answerLabel', 'answerText'])
+                if obj['answerLabel'].upper() not in ('A', 'B', 'C', 'D'):
+                    raise ValueError('answerLabel must be A/B/C/D')
+                return validate_item(obj, 'questions', subset)
+            question = self.request('question', prompt + context + plan + feedback,
+                validate_question, limit=1, candidate_round=round_number)
+            if question is None:
+                failures.append(self.audit[-1]['error'])
+                continue
+            blind = {'question': question['question'], 'options': dict(zip('ABCD', question['options']))}
+            def check_answer(obj):
+                require_text(obj, ['reason'])
+                if type(obj.get('unique')) is not bool:
+                    raise ValueError('unique must be boolean')
+                return dict(answer=answer_fields(obj, question['options']), unique=obj['unique'], reason=obj['reason'])
+            check = self.request('answer_verification',
+                '獨立解題，檢查是否唯一正解。答案用 A/B/C/D，answerText 逐字填所選選項。'
+                '格式 {"answerLabel":"C","answerText":"選項原文","unique":true,"reason":"..."}'
+                + context + '\n題目：' + json.dumps(blind, ensure_ascii=False), check_answer,
+                candidate_round=round_number)
+            accepted = bool(check and check['unique'] and check['answer'] == question['answer'])
+            reason = None if accepted else 'independent answer disagrees, is non-unique, or could not be validated'
+            self.save_audit(dict(stage='question_gate', candidate_round=round_number,
+                question_id=question['id'], sourceIds=question['sourceIds'], accepted=accepted,
+                proposed_answer=question['answer'], verification=check, error=reason))
+            if accepted:
+                question['answerVerification'] = dict(status='same_model_agreement', **check)
+                return question, failures
+            failures.append(reason)
+        return None, failures
 
     def run(self, pages, course_id, model_id, max_groups=20):
         sources = build_sources(pages)
@@ -140,28 +237,16 @@ class Pipeline:
                 continue
             plan = '\n分析草稿：' + json.dumps(analysis, ensure_ascii=False)
             note = self.request('teaching', '深入教學：說明機制、因果及易混淆概念。extension 如無依據填「待核實：無補充」。格式 {"topic":"...","summary":"...","explanation":"...","extension":"...","sourceIds":["S0001"]}' + context + plan, lambda o: validate_item(o, 'notes', subset))
-            question = self.request('question', '生成一題理解四選一題，唯一正解。格式 {"topic":"...","question":"...","options":["...","...","...","..."],"answer":0,"explanation":"...","sourceIds":["S0001"]}' + context + plan, lambda o: validate_item(o, 'questions', subset))
+            question, question_failures = self.make_question(subset, context, plan)
             if note:
                 result['notes'].append(note)
             else:
                 result['warnings'].append('深入教學生成失敗：' + ','.join(group))
             if question:
-                # Blind solution: proposed answer and explanation omitted to reduce anchoring.
-                blind = {k: question[k] for k in ['question', 'options']}
-                def answer_check(obj):
-                    require_text(obj, ['reason'])
-                    if type(obj.get('answer')) is not int or not 0 <= obj['answer'] < 4 or type(obj.get('unique')) is not bool:
-                        raise ValueError('answer integer 0..3 and unique boolean required')
-                    return obj
-                check = self.request('answer_verification', '獨立解題，檢查是否唯一正解。格式 {"answer":0,"unique":true,"reason":"..."}' + context + '\n題目：' + json.dumps(blind, ensure_ascii=False), answer_check)
-                if check and check['unique'] and check['answer'] == question['answer']:
-                    question['answerVerification'] = dict(status='same_model_agreement', **check)
-                    result['questions'].append(question)
-                else:
-                    result['warnings'].append('答案驗證未通過：' + question['id'])
+                result['questions'].append(question)
             else:
-                result['warnings'].append('考題生成失敗：' + ','.join(group))
-            candidates = {'note': note, 'question': question}
+                result['warnings'].append('考題生成或答案驗證未通過（已達重試上限）：' + ','.join(group))
+            candidates = {'note': note, 'exportedQuestion': question, 'questionFailures': question_failures}
             def review_check(obj):
                 for k in ['academic', 'citationSupport', 'teaching']:
                     if type(obj.get(k)) is not int or not 0 <= obj[k] <= 2:
@@ -169,7 +254,10 @@ class Pipeline:
                 require_text(obj, ['reason'])
                 return obj
             review = self.request('quality_review', '評估草稿：academic 學術正確性、citationSupport 引用是否支持主張、teaching 教學清晰度，各 0=錯誤/不足、1=部分、2=充分；缺少內容評0。格式 {"academic":0,"citationSupport":0,"teaching":0,"reason":"..."}。這只是同模型評估，不能證明正確。' + context + '\n草稿：' + json.dumps(candidates, ensure_ascii=False), review_check)
-            reviews.append(dict(sourceIds=group, review=review, status='same_model_heuristic' if review else 'unavailable'))
+            reviews.append(dict(sourceIds=group, review=review, status='same_model_heuristic' if review else 'unavailable',
+                question_status='accepted_by_same_model' if question else 'rejected',
+                question_failures=question_failures, completeness_pass=bool(note and question),
+                academic_quality_verified=False))
         result['evaluation'] = dict(academic_quality_verified=False, human_review='pending', reviews=reviews,
                                     citation_mapping='exact_source_slices', semantic_support_verified=False)
         result['warnings'].append('來源映射及格式通過不代表學術正確；同模型覆核可能共同犯錯，仍需人工審查。')

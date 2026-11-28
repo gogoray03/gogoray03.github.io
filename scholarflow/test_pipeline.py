@@ -7,7 +7,7 @@ from model_runtime import MODELS, check_memory
 
 PAGES = [('synthetic', '鈉通道活化造成去極化。鉀離子外流造成再極化。')]
 NOTE = dict(topic='動作電位', summary='鈉通道活化造成去極化', explanation='鈉通道活化使鈉內流，造成去極化。', extension='待核實：無補充', sourceIds=['S0001'])
-QUESTION = dict(topic='動作電位', question='哪種離子外流造成再極化？', options=['鉀', '鈉', '鈣', '氯'], answer=0, explanation='教材指出鉀離子外流。', sourceIds=['S0001'])
+QUESTION = dict(topic='動作電位', question='哪種離子外流造成再極化？', options=['鉀', '鈉', '鈣', '氯'], answer=0, answerLabel='A', answerText='鉀', explanation='教材指出鉀離子外流。', sourceIds=['S0001'])
 
 
 class PipelineTests(unittest.TestCase):
@@ -71,8 +71,9 @@ class PipelineTests(unittest.TestCase):
                 validate_item(dict(QUESTION, **change), 'questions', build_sources(PAGES))
 
     def run_flow(self, answer=0):
-        replies = iter([dict(concept='電位', learningGoal='理解電位', sourceIds=['S0001']), NOTE, QUESTION,
-                        dict(answer=answer, unique=True, reason='教材支持'),
+        attempts = 1 if answer == 0 else 3
+        replies = iter([dict(concept='電位', learningGoal='理解電位', sourceIds=['S0001']), NOTE,
+                        *[x for _ in range(attempts) for x in [QUESTION, dict(answer=answer, unique=True, reason='教材支持')]],
                         dict(academic=2, citationSupport=2, teaching=2, reason='模型評估')])
         return Pipeline(lambda prompt: json.dumps(next(replies))).run(PAGES, 'test', 'mock')
 

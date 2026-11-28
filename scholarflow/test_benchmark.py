@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 from build_notebooks import BENCHMARK
-from pipeline import Pipeline
+from pipeline import Pipeline, answer_fields
 from test_pipeline import NOTE, QUESTION
 
 
@@ -53,9 +53,9 @@ class BenchmarkTests(unittest.TestCase):
             try:
                 os.chdir(directory)
                 with patch.dict(sys.modules, modules), contextlib.redirect_stdout(io.StringIO()):
-                    exec(compile(BENCHMARK, 'benchmark', 'exec'), dict(ModelRuntime=FakeRuntime, Pipeline=Pipeline, MODEL='Qwen 7B', environment={'mock':True}))
+                    exec(compile(BENCHMARK, 'benchmark', 'exec'), dict(ModelRuntime=FakeRuntime, Pipeline=Pipeline, answer_fields=answer_fields, MODEL='Qwen 7B', environment={'mock':True}))
                 report = json.loads(Path('scholarflow-benchmark-v1.1.json').read_text(encoding='utf-8'))
-                with zipfile.ZipFile(downloads[0]) as archive:
+                with zipfile.ZipFile('scholarflow-benchmark-v1.1.zip') as archive:
                     self.assertIn('scholarflow-benchmark-v1.1.json', archive.namelist())
                 self.assertTrue(FakeRuntime.unloaded)
                 return report
