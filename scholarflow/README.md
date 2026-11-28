@@ -71,3 +71,6 @@ build_notebooks.py 將受測模組直接嵌入 Notebook，不在執行時下載�
 ## 限制
 
 無 OCR、圖片、錄音或圖表辨識；固定字元分段可能切斷句子；每組一份筆記與一題，尚無跨組課程綜合。V1.1 不推測教授個人特徵，professorEvidence 為空。延伸內容待核實；同模型評分有偏誤；人工審查表不自動寫回網站。未完成真實 Colab GPU、套件相容性及瀏覽器端到端驗收。localStorage 無跨裝置同步，免費 GPU 配額不保證可用。本次僅更新 feature 分支，正式 Pages 不會更新。
+
+### V1.1.2 Colab bootstrap hotfix
+Python 3.13 Colab `ensurepip` failed before model loading. Create the worker with `with_pip=False` and use host `python -m pip --python <worker-python> install` to install into the worker. This avoids modifying host packages. Both notebooks embed the updated environment module. Start a fresh GPU runtime. A local Python 3.13 offline wheel installation confirmed the target-worker mechanism and that the probe package did not appear in the host. Actual Colab model package installation and GPU inference remain unverified.

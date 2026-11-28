@@ -46,10 +46,11 @@ class EnvironmentTests(unittest.TestCase):
                     else:
                         python, _ = env.setup_worker(['transformers==4.51.3'], worker)
                         self.assertTrue(str(python).startswith(str(worker)))
-                    builder.assert_called_once_with(with_pip=True, system_site_packages=True)
+                    builder.assert_called_once_with(with_pip=False, system_site_packages=True)
                 report = json.loads(Path('scholarflow-environment.json').read_text(encoding='utf-8'))
                 self.assertTrue(Path('scholarflow-install.log').exists())
-                self.assertTrue(all(str(c[0]).startswith(str(worker)) for c in commands))
+                self.assertEqual(commands[0][:5], [env.sys.executable, '-m', 'pip', '--python', str(worker / ('Scripts/python.exe' if env.sys.platform == 'win32' else 'bin/python'))])
+                self.assertTrue(all(str(c[0]).startswith(str(worker)) for c in commands[1:]))
                 return report
         finally:
             os.chdir(previous)

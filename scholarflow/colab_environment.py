@@ -41,18 +41,23 @@ def dependency_closure(roots):
 
 
 def pip_check(python):
-    run = subprocess.run([str(python), '-m', 'pip', 'check'], capture_output=True, text=True)
+    command = [sys.executable, '-m', 'pip']
+    if Path(python).resolve() != Path(sys.executable).resolve() or str(python) != sys.executable:
+        command.extend(['--python', str(python)])
+    run = subprocess.run([*command, 'check'], capture_output=True, text=True)
     return dict(returncode=run.returncode, output=run.stdout + run.stderr)
 
 
 def setup_worker(packages, root='scholarflow-worker-env'):
     root = Path(root).resolve()
     before = pip_check(sys.executable)
-    environment = dict(version='1.1.1', python=sys.version, isolation='worker_venv_with_system_packages',
+    environment = dict(version='1.1.2', python=sys.version, isolation='worker_venv_with_system_packages',
                        host_pip_check_before=before, dependency_check_pass=False)
     destination = Path('scholarflow-environment.json')
     try:
-        venv.EnvBuilder(with_pip=True, system_site_packages=True).create(root)
+        environment['setup_stage'] = 'create_venv_without_ensurepip'
+        # Colab Python 3.13 can fail during ensurepip; use the host pip CLI targeting the worker.
+        venv.EnvBuilder(with_pip=False, system_site_packages=True).create(root)
         python = root / ('Scripts/python.exe' if sys.platform == 'win32' else 'bin/python')
         # Freeze the existing heavyweight stack: incompatible upgrades must fail resolution.
         protected = []
@@ -62,13 +67,15 @@ def setup_worker(packages, root='scholarflow-worker-env'):
                 protected.append(f'{name}=={dist.version}')
         constraint = root / 'host-stack-constraints.txt'
         constraint.write_text('\n'.join(sorted(set(protected))) + '\n', encoding='utf-8')
-        install = subprocess.run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check',
+        environment['setup_stage'] = 'install_worker_packages'
+        install = subprocess.run([sys.executable, '-m', 'pip', '--python', str(python), 'install', '--disable-pip-version-check',
                     '-c', str(constraint), *packages], capture_output=True, text=True)
         Path('scholarflow-install.log').write_text(install.stdout + install.stderr, encoding='utf-8')
         environment['install_returncode'] = install.returncode
         if install.returncode:
             raise RuntimeError('Worker installation failed; inspect scholarflow-install.log')
         probe = 'import json; from colab_environment import dependency_closure; print(json.dumps(dependency_closure(' + repr(packages) + ')))'
+        environment['setup_stage'] = 'verify_worker_dependencies'
         closure = subprocess.run([str(python), '-c', probe], capture_output=True, text=True, check=True)
         environment['inference_dependencies'] = json.loads(closure.stdout)
         environment['worker_pip_check'] = pip_check(python)
@@ -78,9 +85,13 @@ def setup_worker(packages, root='scholarflow-worker-env'):
         environment['dependency_check_pass'] = environment['inference_dependencies']['pass_check'] and before == after
         if not environment['dependency_check_pass']:
             raise RuntimeError('Inference dependencies incompatible or host check changed; see scholarflow-environment.json')
+        environment['setup_stage'] = 'complete'
         return str(python), environment
     except Exception as exc:
         environment['setup_error'] = f'{type(exc).__name__}: {exc}'
+        if isinstance(exc, subprocess.CalledProcessError):
+            environment['subprocess_stdout'] = str(exc.stdout or '')
+            environment['subprocess_stderr'] = str(exc.stderr or '')
         environment['host_pip_check_after'] = pip_check(sys.executable)
         raise
     finally:
