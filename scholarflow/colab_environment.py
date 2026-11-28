@@ -64,7 +64,7 @@ def pip_check(python):
 def setup_worker(packages, root='scholarflow-worker-env'):
     root = Path(root).resolve()
     before = pip_check(sys.executable)
-    environment = dict(version='1.1.3', python=sys.version, isolation='worker_venv_with_system_packages',
+    environment = dict(version='1.1.4', python=sys.version, isolation='worker_venv_with_system_packages',
                        host_pip_check_before=before, dependency_check_pass=False)
     destination = Path('scholarflow-environment.json')
     try:

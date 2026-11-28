@@ -10,6 +10,10 @@ for name in ['scholarflow.ipynb', 'benchmark-v1.1.ipynb']:
     codes = [c.source for c in nb.cells if c.cell_type == 'code']
     for code in codes:
         ast.parse(code)
+    expected_packages = [s for s in (root/'requirements-colab.txt').read_text().splitlines() if s and not s.startswith('#')]
+    setup_calls = [n for code in codes for n in ast.walk(ast.parse(code)) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == 'setup_worker']
+    assert len(setup_calls) == 1, 'missing or duplicate setup_worker call'
+    assert ast.literal_eval(setup_calls[0].args[0]) == expected_packages, 'notebook dependency pin drift'
     embedded = {}
     for code in codes:
         for node in ast.walk(ast.parse(code)):

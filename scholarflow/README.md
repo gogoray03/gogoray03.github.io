@@ -77,3 +77,6 @@ Python 3.13 Colab `ensurepip` failed before model loading. Create the worker wit
 
 ### V1.1.3 Colab duplicate metadata fix
 The actual Colab install log exposed conflicting NumPy constraints (`1.26.4` and `2.4.6`). The worker now resolves each canonical package name once via its own metadata precedence, records all duplicate versions separately, and writes only one constraint per name. Added regression tests for duplicate NumPy metadata and constraint generation. Real Colab installation/inference still requires rerun.
+
+### V1.1.4 notebook dependency pin repair
+The uploaded V1.1.3 install log showed that an unintended notebook-only version replacement changed python-docx from 1.1.2 to nonexistent 1.1.3. Restore all notebook pins from requirements-colab.txt and check exact parity in check_notebooks.py. Duplicate NumPy constraint fix is retained. Actual Colab installation and inference remain unverified.
