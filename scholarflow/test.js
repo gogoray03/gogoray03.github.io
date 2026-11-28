@@ -1,0 +1,11 @@
+'use strict';
+const assert = require('node:assert/strict');
+const {validResult:v}=require('./app.js');
+const base={schema:'scholarflow.result.v1',courseId:'test',model:'test',notes:[],questions:[],professorEvidence:[],warnings:[]};
+const q={id:'questions-'+'a'.repeat(20),topic:'test',question:'test',explanation:'test',source:'test',evidence:'test',options:['a','b','c','d'],answer:0};
+assert.ok(v(base));assert.ok(v({...base,questions:[q]}));
+assert.ok(!v({...base,questions:[{...q,answer:4}]}));
+assert.ok(!v({...base,questions:[q,q]}));
+assert.ok(!v({...base,questions:[{...q,id:'__proto__'}]}));
+assert.ok(!v({...base,warnings:'bad'}));
+console.log('6 schema tests passed');
